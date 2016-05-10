@@ -119,14 +119,14 @@ class CommandLineTool(Process):
     def makeJobRunner(self):  # type: () -> CommandLineJob
         return CommandLineJob()
 
-    def makePathMapper(self, reffiles, input_basedir, **kwargs):
+    def makePathMapper(self, reffiles, refdirs, input_basedir, **kwargs):
         # type: (Set[str], str, **Any) -> PathMapper
         dockerReq, _ = self.get_requirement("DockerRequirement")
         try:
             if dockerReq and kwargs.get("use_container"):
-                return DockerPathMapper(reffiles, input_basedir)
+                return DockerPathMapper(reffiles, refdirs, input_basedir)
             else:
-                return PathMapper(reffiles, input_basedir)
+                return PathMapper(reffiles, refdirs, input_basedir)
         except OSError as e:
             if e.errno == errno.ENOENT:
                 raise WorkflowException(u"Missing input file %s" % e)
@@ -201,6 +201,7 @@ class CommandLineTool(Process):
         builder = self._init_job(joborder, input_basedir, **kwargs)
 
         reffiles = set((f["path"] for f in builder.files))
+        refdirs = set((d["path"] for d in build.dirs ))
 
         j = self.makeJobRunner()
         j.builder = builder
@@ -232,7 +233,7 @@ class CommandLineTool(Process):
             if os.path.isabs(j.stdout) or ".." in j.stdout:
                 raise validate.ValidationException("stdout must be a relative path")
 
-        builder.pathmapper = self.makePathMapper(reffiles, input_basedir, **kwargs)
+        builder.pathmapper = self.makePathMapper(reffiles, refdirs, input_basedir, **kwargs)
         builder.requirements = j.requirements
 
         # map files to assigned path inside a container. We need to also explicitly

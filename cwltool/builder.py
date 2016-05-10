@@ -35,6 +35,7 @@ class Builder(object):
         self.names = None  # type: avro.schema.Names
         self.schemaDefs = None  # type: Dict[str,Dict[unicode, Any]]
         self.files = None  # type: List[Dict[str, str]]
+        self.dirs = None  # type: List[Dict[str, str]]
         self.fs_access = None  # type: StdFsAccess
         self.job = None  # type: Dict[str, Any]
         self.requirements = None  # type: List[Dict[str,Any]]
@@ -139,6 +140,9 @@ class Builder(object):
                     return f
 
                 adjustFileObjs(datum.get("secondaryFiles", []), _capture_files)
+
+            if schema["type"] == "Directory":
+                self.dirs.append(datum)
 
         # Position to front of the sort key
         if binding:

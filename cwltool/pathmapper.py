@@ -20,14 +20,21 @@ class PathMapper(object):
     """Mapping of files from relative path provided in the file to a tuple of
     (absolute local path, absolute container path)"""
 
-    def __init__(self, referenced_files, basedir):
+    def __init__(self, referenced_files, referenced_dirs, basedir):
         # type: (Set[str], str) -> None
         self._pathmap = {}  # type: Dict[str, Tuple[str, str]]
-        self.setup(referenced_files, basedir)
+        self._dirlist = set()
+        self.setup(referenced_files, referenced_dirs, basedir)
 
-    def setup(self, referenced_files, basedir):
+    def setup(self, referenced_files, referenced_dirs, basedir):
         # type: (Set[str], str) -> None
-        for src in referenced_files:
+        self._createmappings(referenced_files, basedir)
+        self._createmappings(referenced_dirs, basedir)
+        for dir in referenced_dirs:
+            self._dirlist.add(dir)
+
+    def _createmappings(self, srcs, basedir):
+        for src in srcs:
             ab = abspath(src, basedir)
             self._pathmap[src] = (ab, ab)
 
@@ -40,7 +47,10 @@ class PathMapper(object):
             return self._pathmap[src]
 
     def files(self):  # type: () -> List[str]
-        return self._pathmap.keys()
+        return [ f for f in self._pathmap.keys() if f not in self._dirlist ]
+
+    def dirs(self):
+        return [ f for f in self._pathmap.keys() if f in self._dirlist ]
 
     def items(self):  # type: () -> List[Tuple[str,Tuple[str,str]]]
         return self._pathmap.items()
@@ -54,13 +64,14 @@ class PathMapper(object):
 
 class DockerPathMapper(PathMapper):
 
-    def __init__(self, referenced_files, basedir):
+    def __init__(self, referenced_files, referenced_dirs, basedir):
         # type: (Set[str], str) -> None
         self.dirs = {}  # type: Dict[str, Union[bool, str]]
         super(DockerPathMapper, self).__init__(referenced_files, basedir)
 
-    def setup(self, referenced_files, basedir):
-        for src in referenced_files:
+    def _createmappings(self, srcs, basedir):
+        # figure out how many incoming directories we have
+        for src in srcs:
             ab = abspath(src, basedir)
             dirn, fn = os.path.split(ab)
 
@@ -77,6 +88,7 @@ class DockerPathMapper(PathMapper):
                         del self.dirs[d]
                 self.dirs[dirn] = True
 
+        # create unique names for all those directories
         prefix = "job" + str(random.randint(1, 1000000000)) + "_"
 
         names = set()  # type: Set[str]
@@ -90,6 +102,7 @@ class DockerPathMapper(PathMapper):
             names.add(name)
             self.dirs[d] = name
 
+        # use above information to create a sensible mapping
         for src in referenced_files:
             ab = abspath(src, basedir)
 

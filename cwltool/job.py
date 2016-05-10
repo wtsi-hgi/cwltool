@@ -78,6 +78,10 @@ class CommandLineJob(object):
             if not os.path.isfile(self.pathmapper.mapper(f)[0]):
                 raise WorkflowException(u"Required input file %s not found or is not a regular file." % self.pathmapper.mapper(f)[0])
 
+        for f in self.pathmapper.dirs():
+            if not os.path.isdir(self.pathmapper.mapper(f)[0]):
+                raise WorkflowException(u"Required input directory %s not found or is not a directory." % self.pathmapper.mapper(f)[0])
+
         img_id = None
         if docker_req and kwargs.get("use_container") is not False:
             env = os.environ
