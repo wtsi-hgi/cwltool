@@ -213,12 +213,13 @@ def main():  # type: () -> int
             unsupported += 1
         else:
             passed += 1
-        xml_lines += make_xml_lines(t, rt)
+        xml_lines += make_xml_lines(t, rt, args.test)
 
     if args.junit_xml:
         with open(args.junit_xml, 'w') as fp:
             fp.write('<testsuites>\n')
-            fp.write('  <testsuite name="%s" tests="%s" failures="%s">\n' % (args.test, len(ntest), failures))
+            fp.write('  <testsuite name="%s" tests="%s" failures="%s" skipped="%s">\n' % (
+                args.tool, len(ntest), failures, unsupported))
             fp.writelines(xml_lines)
             fp.write('  </testsuite>\n')
             fp.write('</testsuites>\n')
@@ -231,9 +232,9 @@ def main():  # type: () -> int
         return 1
 
 
-def make_xml_lines(test, rt):
+def make_xml_lines(test, rt, test_case_group='N/A'):
     doc = test.get('doc', 'N/A').strip()
-    elem = '    <testcase name="%s" classname="%s"' % (doc, 'N/A')
+    elem = '    <testcase name="%s" classname="%s"' % (doc, test_case_group)
     if rt == 0:
         return elem + '/>\n'
     if rt == UNSUPPORTED_FEATURE:
@@ -247,6 +248,7 @@ def make_xml_lines(test, rt):
         '      <failure message="N/A">N/A</failure>\n'
         '</testcase>\n',
     ]
+
 
 if __name__ == "__main__":
     sys.exit(main())
