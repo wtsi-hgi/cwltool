@@ -158,7 +158,7 @@ def main():  # type: () -> int
     parser.add_argument("--tool", type=str, default="cwl-runner",
                         help="CWL runner executable to use (default 'cwl-runner'")
     parser.add_argument("--only-tools", action="store_true", help="Only test tools")
-    parser.add_argument("--no-xml", action="store_true", help="Do not make results.xml file")
+    parser.add_argument("--junit-xml", type=str, default=None, help="Path to JUnit xml file")
 
     args = parser.parse_args()
 
@@ -215,10 +215,10 @@ def main():  # type: () -> int
             passed += 1
         xml_lines += make_xml_lines(t, rt)
 
-    if not args.no_xml:
-        with open('results.xml', 'w') as fp:
+    if args.junit_xml:
+        with open(args.junit_xml, 'w') as fp:
             fp.write('<testsuites>\n')
-            fp.write('  <testsuite name="%s" tests="%s" failures=%s>\n' % (args.test, ntest, failures))
+            fp.write('  <testsuite name="%s" tests="%s" failures=%s>\n' % (args.test, len(ntest), failures))
             fp.writelines(xml_lines)
             fp.write('  </testsuite>\n')
             fp.write('</testsuites>\n')
@@ -232,7 +232,8 @@ def main():  # type: () -> int
 
 
 def make_xml_lines(test, rt):
-    elem = '    <testcase name="%s" classname="%s"' % (test.get('doc', 'N/A'), 'N/A')
+    doc = test.get('doc', 'N/A').strip()
+    elem = '    <testcase name="%s" classname="%s"' % (doc, 'N/A')
     if rt == 0:
         return elem + '/>\n'
     if rt == UNSUPPORTED_FEATURE:
