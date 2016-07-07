@@ -218,7 +218,7 @@ def main():  # type: () -> int
     if args.junit_xml:
         with open(args.junit_xml, 'w') as fp:
             fp.write('<testsuites>\n')
-            fp.write('  <testsuite name="%s" tests="%s" failures=%s>\n' % (args.test, len(ntest), failures))
+            fp.write('  <testsuite name="%s" tests="%s" failures="%s">\n' % (args.test, len(ntest), failures))
             fp.writelines(xml_lines)
             fp.write('  </testsuite>\n')
             fp.write('</testsuites>\n')
