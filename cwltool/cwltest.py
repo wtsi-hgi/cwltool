@@ -12,13 +12,14 @@ import ruamel.yaml.scanner as yamlscanner
 import pipes
 import logging
 import schema_salad.ref_resolver
-from typing import Any, Union
+from typing import Any, Dict
 
 _logger = logging.getLogger("cwltest")
 _logger.addHandler(logging.StreamHandler())
 _logger.setLevel(logging.INFO)
 
 UNSUPPORTED_FEATURE = 33
+
 
 class CompareFail(Exception):
     pass
@@ -36,12 +37,12 @@ def compare(a, b):  # type: (Any, Any) -> bool
                     comp = "location"
                 if a[comp] == "Any" or b[comp] == "Any":
                     return True
-                if a[comp] and (not (b[comp].endswith("/" + a[comp])
-                                or ("/" not in b[comp] and a[comp] == b[comp]))):
-                    raise CompareFail(u"%s does not end with %s" %(b[comp], a[comp]))
+                if a[comp] and (not (b[comp].endswith("/" + a[comp]) or
+                                     ("/" not in b[comp] and a[comp] == b[comp]))):
+                    raise CompareFail(u"%s does not end with %s" % (b[comp], a[comp]))
                 # ignore empty collections
                 b = {k: v for k, v in b.iteritems()
-                        if not isinstance(v, (list, dict)) or len(v) > 0}
+                     if not isinstance(v, (list, dict)) or len(v) > 0}
             elif a.get("class") == "Directory":
                 if len(a["listing"]) != len(b["listing"]):
                     return False
@@ -55,7 +56,8 @@ def compare(a, b):  # type: (Any, Any) -> bool
                         except:
                             pass
                     if not found:
-                        raise CompareFail(u"%s not in %s" % (json.dumps(i, indent=4, sort_keys=True), json.dumps(b, indent=4, sort_keys=True)))
+                        raise CompareFail(u"%s not in %s" % (
+                            json.dumps(i, indent=4, sort_keys=True), json.dumps(b, indent=4, sort_keys=True)))
 
             a = {k: v for k, v in a.iteritems()
                  if k not in ("path", "location", "listing", "basename")}
@@ -63,7 +65,8 @@ def compare(a, b):  # type: (Any, Any) -> bool
                  if k not in ("path", "location", "listing", "basename")}
 
             if len(a) != len(b):
-                raise CompareFail(u"expected %s\ngot %s" % (json.dumps(a, indent=4, sort_keys=True), json.dumps(b, indent=4, sort_keys=True)))
+                raise CompareFail(u"expected %s\ngot %s" % (
+                    json.dumps(a, indent=4, sort_keys=True), json.dumps(b, indent=4, sort_keys=True)))
             for c in a:
                 if a.get("class") != "File" or c not in ("path", "location", "listing"):
                     if c not in b:
@@ -73,7 +76,8 @@ def compare(a, b):  # type: (Any, Any) -> bool
             return True
         elif isinstance(a, list):
             if len(a) != len(b):
-                raise CompareFail(u"expected %s\ngot %s" % (json.dumps(a, indent=4, sort_keys=True), json.dumps(b, indent=4, sort_keys=True)))
+                raise CompareFail(u"expected %s\ngot %s" % (
+                    json.dumps(a, indent=4, sort_keys=True), json.dumps(b, indent=4, sort_keys=True)))
             for c in xrange(0, len(a)):
                 if not compare(a[c], b[c]):
                     return False
@@ -89,7 +93,7 @@ def compare(a, b):  # type: (Any, Any) -> bool
 
 def run_test(args, i, t):  # type: (argparse.Namespace, Any, Dict[str,str]) -> int
     out = {}  # type: Dict[str,Any]
-    outdir = None
+    outdir, outstr, test_command = None, None, None
     try:
         test_command = [args.tool]
         # Add prefixes if running on MacOSX so that boot2docker writes to /Users
@@ -181,7 +185,7 @@ def main():  # type: () -> int
 
     if args.l:
         for i, t in enumerate(tests):
-            print u"[%i] %s" % (i+1, t["doc"].strip())
+            print u"[%i] %s" % (i + 1, t["doc"].strip())
         return 0
 
     if args.n is not None:
@@ -189,15 +193,15 @@ def main():  # type: () -> int
         for s in args.n.split(","):
             sp = s.split("-")
             if len(sp) == 2:
-                ntest.extend(range(int(sp[0])-1, int(sp[1])))
+                ntest.extend(range(int(sp[0]) - 1, int(sp[1])))
             else:
-                ntest.append(int(s)-1)
+                ntest.append(int(s) - 1)
     else:
         ntest = range(0, len(tests))
 
     for i in ntest:
         t = tests[i]
-        sys.stderr.write("\rTest [%i/%i] " % (i+1, len(tests)))
+        sys.stderr.write("\rTest [%i/%i] " % (i + 1, len(tests)))
         sys.stderr.flush()
         rt = run_test(args, i, t)
         if rt == 1:
@@ -206,8 +210,8 @@ def main():  # type: () -> int
             unsupported += 1
 
     if failures == 0 and unsupported == 0:
-         _logger.info("All tests passed")
-         return 0
+        _logger.info("All tests passed")
+        return 0
     else:
         _logger.warn("%i failures, %i unsupported features", failures, unsupported)
         return 1
