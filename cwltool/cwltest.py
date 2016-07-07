@@ -158,6 +158,7 @@ def main():  # type: () -> int
     parser.add_argument("--tool", type=str, default="cwl-runner",
                         help="CWL runner executable to use (default 'cwl-runner'")
     parser.add_argument("--only-tools", action="store_true", help="Only test tools")
+    parser.add_argument("--no-xml", action="store_true", help="Do not make results.xml file")
 
     args = parser.parse_args()
 
@@ -170,6 +171,8 @@ def main():  # type: () -> int
 
     failures = 0
     unsupported = 0
+    passed = 0
+    xml_lines = []
 
     if args.only_tools:
         alltests = tests
@@ -208,6 +211,17 @@ def main():  # type: () -> int
             failures += 1
         elif rt == UNSUPPORTED_FEATURE:
             unsupported += 1
+        else:
+            passed += 1
+        xml_lines += make_xml_lines(t, rt)
+
+    if not args.no_xml:
+        with open('results.xml', 'w') as fp:
+            fp.write('<testsuites>\n')
+            fp.write('  <testsuite name="%s" tests="%s" failures=%s>\n' % (args.test, ntest, failures))
+            fp.writelines(xml_lines)
+            fp.write('  </testsuite>\n')
+            fp.write('</testsuites>\n')
 
     if failures == 0 and unsupported == 0:
         _logger.info("All tests passed")
@@ -216,6 +230,22 @@ def main():  # type: () -> int
         _logger.warn("%i failures, %i unsupported features", failures, unsupported)
         return 1
 
+
+def make_xml_lines(test, rt):
+    elem = '    <testcase name="%s" classname="%s"' % (test.get('doc', 'N/A'), 'N/A')
+    if rt == 0:
+        return elem + '/>\n'
+    if rt == UNSUPPORTED_FEATURE:
+        return [
+            elem + '>\n',
+            '      <skipped/>\n'
+            '</testcase>\n',
+        ]
+    return [
+        elem + '>\n',
+        '      <failure message="N/A">N/A</failure>\n'
+        '</testcase>\n',
+    ]
 
 if __name__ == "__main__":
     sys.exit(main())
