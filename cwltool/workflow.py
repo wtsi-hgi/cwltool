@@ -17,9 +17,11 @@ import json
 import schema_salad
 from . import expression
 from .load_tool import load_tool
+from .perf import Perf
 from typing import Any, Callable, cast, Generator, Iterable, List, Text, Union
 
 _logger = logging.getLogger("cwltool")
+metrics = logging.getLogger("cwltool.metrics")
 
 WorkflowStateItem = namedtuple('WorkflowStateItem', ['parameter', 'value'])
 
@@ -339,14 +341,15 @@ class WorkflowJob(object):
         if "outdir" in kwargs:
             del kwargs["outdir"]
 
-        for i in self.tool["inputs"]:
-            iid = shortname(i["id"])
-            if iid in joborder:
-                self.state[i["id"]] = WorkflowStateItem(i, copy.deepcopy(joborder[iid]))
-            elif "default" in i:
-                self.state[i["id"]] = WorkflowStateItem(i, copy.deepcopy(i["default"]))
-            else:
-                raise WorkflowException(u"Input '%s' not in input object and does not have a default value." % (i["id"]))
+        with Perf(metrics, "deepcopy inputs"):
+            for i in self.tool["inputs"]:
+                iid = shortname(i["id"])
+                if iid in joborder:
+                    self.state[i["id"]] = WorkflowStateItem(i, copy.deepcopy(joborder[iid]))
+                elif "default" in i:
+                    self.state[i["id"]] = WorkflowStateItem(i, copy.deepcopy(i["default"]))
+                else:
+                    raise WorkflowException(u"Input '%s' not in input object and does not have a default value." % (i["id"]))
 
         for s in self.steps:
             for out in s.tool["outputs"]:
@@ -406,7 +409,8 @@ class Workflow(Process):
 
     def job(self, joborder, output_callback, **kwargs):
         # type: (Dict[Text, Text], Callable[[Any, Any], Any], **Any) -> Generator
-        builder = self._init_job(joborder, **kwargs)
+        with Perf(metrics, "Workflow _init_job"):
+            builder = self._init_job(joborder, **kwargs)
         wj = WorkflowJob(self, **kwargs)
         yield wj
 
@@ -580,10 +584,14 @@ class ReceiveScatterOutput(object):
 def parallel_steps(steps, rc, kwargs):  # type: (List[Generator], ReceiveScatterOutput, Dict[str, Any]) -> Generator
     while rc.completed < rc.total:
         made_progress = False
+        loopperf = Perf(metrics, "parallel_steps iter")
+
         for step in steps:
             if kwargs.get("on_error", "stop") == "stop" and rc.processStatus != "success":
                 break
+            loopperf.__enter__()
             for j in step:
+                loopperf.__exit__()
                 if kwargs.get("on_error", "stop") == "stop" and rc.processStatus != "success":
                     break
                 if j:
@@ -591,6 +599,8 @@ def parallel_steps(steps, rc, kwargs):  # type: (List[Generator], ReceiveScatter
                     yield j
                 else:
                     break
+                loopperf.__enter__()
+            loopperf.__exit__()
         if not made_progress and rc.completed < rc.total:
             yield None
 

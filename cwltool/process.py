@@ -30,8 +30,10 @@ from .stdfsaccess import StdFsAccess
 from .builder import Builder, adjustFileObjs, adjustDirObjs
 from .errors import WorkflowException, UnsupportedRequirement
 from .pathmapper import PathMapper, abspath, normalizeFilesDirs
+from .perf import Perf
 
 _logger = logging.getLogger("cwltool")
+metrics = logging.getLogger("cwltool.metrics")
 
 supportedProcessRequirements = ["DockerRequirement",
                                 "SchemaDefRequirement",
@@ -433,7 +435,8 @@ class Process(object):
 
         # Validate job order
         try:
-            validate.validate_ex(self.names.get_name("input_record_schema", ""), builder.job)
+            with Perf(metrics, "validate input record"):
+                validate.validate_ex(self.names.get_name("input_record_schema", ""), builder.job)
         except validate.ValidationException as e:
             raise WorkflowException("Error validating input record, " + Text(e))
 

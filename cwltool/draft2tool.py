@@ -24,12 +24,14 @@ from .builder import CONTENT_LIMIT, substitute, Builder, adjustFileObjs, adjustD
 from .pathmapper import PathMapper
 from .job import CommandLineJob
 from .stdfsaccess import StdFsAccess
+from .perf import Perf
 
 ACCEPTLIST_RE = re.compile(r"^[a-zA-Z0-9._+-]+$")
 
 from .flatten import flatten
 
 _logger = logging.getLogger("cwltool")
+metrics = logging.getLogger("cwltool.metrics")
 
 class ExpressionTool(Process):
     def __init__(self, toolpath_object, **kwargs):
@@ -234,46 +236,49 @@ class CommandLineTool(Process):
                     partial(rm_pending_output_callback, output_callback,
                         jobcachepending))
 
-        builder = self._init_job(joborder, **kwargs)
+        with Perf(metrics, "draft2tool init job"):
+            builder = self._init_job(joborder, **kwargs)
 
-        reffiles = copy.deepcopy(builder.files)
+        with Perf(metrics, "draft2tool setup"):
+            with Perf(metrics, "draft2tool deepcopy files"):
+                reffiles = copy.deepcopy(builder.files)
 
-        j = self.makeJobRunner()
-        j.builder = builder
-        j.joborder = builder.job
-        j.stdin = None
-        j.stderr = None
-        j.stdout = None
-        j.successCodes = self.tool.get("successCodes")
-        j.temporaryFailCodes = self.tool.get("temporaryFailCodes")
-        j.permanentFailCodes = self.tool.get("permanentFailCodes")
-        j.requirements = self.requirements
-        j.hints = self.hints
-        j.name = jobname
+            j = self.makeJobRunner()
+            j.builder = builder
+            j.joborder = builder.job
+            j.stdin = None
+            j.stderr = None
+            j.stdout = None
+            j.successCodes = self.tool.get("successCodes")
+            j.temporaryFailCodes = self.tool.get("temporaryFailCodes")
+            j.permanentFailCodes = self.tool.get("permanentFailCodes")
+            j.requirements = self.requirements
+            j.hints = self.hints
+            j.name = jobname
 
-        _logger.debug(u"[job %s] initializing from %s%s",
-                     j.name,
-                     self.tool.get("id", ""),
-                     u" as part of %s" % kwargs["part_of"] if "part_of" in kwargs else "")
-        _logger.debug(u"[job %s] %s", j.name, json.dumps(joborder, indent=4))
+            _logger.debug(u"[job %s] initializing from %s%s",
+                         j.name,
+                         self.tool.get("id", ""),
+                         u" as part of %s" % kwargs["part_of"] if "part_of" in kwargs else "")
+            _logger.debug(u"[job %s] %s", j.name, json.dumps(joborder, indent=4))
 
+        with Perf(metrics, "draft2tool pathmapper"):
+            builder.pathmapper = None
+            make_path_mapper_kwargs = kwargs
+            if "stagedir" in make_path_mapper_kwargs:
+                make_path_mapper_kwargs = make_path_mapper_kwargs.copy()
+                del make_path_mapper_kwargs["stagedir"]
+            builder.pathmapper = self.makePathMapper(reffiles, builder.stagedir, **make_path_mapper_kwargs)
+            builder.requirements = j.requirements
 
-        builder.pathmapper = None
-        make_path_mapper_kwargs = kwargs
-        if "stagedir" in make_path_mapper_kwargs:
-            make_path_mapper_kwargs = make_path_mapper_kwargs.copy()
-            del make_path_mapper_kwargs["stagedir"]
-        builder.pathmapper = self.makePathMapper(reffiles, builder.stagedir, **make_path_mapper_kwargs)
-        builder.requirements = j.requirements
+            _logger.debug(u"[job %s] path mappings is %s", j.name, json.dumps({p: builder.pathmapper.mapper(p) for p in builder.pathmapper.files()}, indent=4))
 
-        _logger.debug(u"[job %s] path mappings is %s", j.name, json.dumps({p: builder.pathmapper.mapper(p) for p in builder.pathmapper.files()}, indent=4))
+            _check_adjust = partial(check_adjust, builder)
 
-        _check_adjust = partial(check_adjust, builder)
-
-        adjustFileObjs(builder.files, _check_adjust)
-        adjustFileObjs(builder.bindings, _check_adjust)
-        adjustDirObjs(builder.files, _check_adjust)
-        adjustDirObjs(builder.bindings, _check_adjust)
+            adjustFileObjs(builder.files, _check_adjust)
+            adjustFileObjs(builder.bindings, _check_adjust)
+            adjustDirObjs(builder.files, _check_adjust)
+            adjustDirObjs(builder.bindings, _check_adjust)
 
         if self.tool.get("stdin"):
             j.stdin = builder.do_eval(self.tool["stdin"])

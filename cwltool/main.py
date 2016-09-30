@@ -31,8 +31,10 @@ from . import draft2tool
 from .builder import adjustFileObjs, adjustDirObjs
 from .stdfsaccess import StdFsAccess
 from .pack import pack
+from .perf import Perf
 
 _logger = logging.getLogger("cwltool")
+metrics = logging.getLogger("cwltool.metrics")
 
 defaultStreamHandler = logging.StreamHandler()
 _logger.addHandler(defaultStreamHandler)
@@ -456,8 +458,10 @@ def load_job_order(args, t, stdin, print_input_deps=False, relative_deps=False,
     adjustDirObjs(job_order_object, pathToLoc)
     adjustFileObjs(job_order_object, pathToLoc)
     normalizeFilesDirs(job_order_object)
-    adjustDirObjs(job_order_object, cast(Callable[..., Any],
-        functools.partial(getListing, make_fs_access(input_basedir))))
+
+    with Perf(metrics, "getListing"):
+        adjustDirObjs(job_order_object, cast(Callable[..., Any],
+                                             functools.partial(getListing, make_fs_access(input_basedir))))
 
     if "cwl:tool" in job_order_object:
         del job_order_object["cwl:tool"]
@@ -591,10 +595,11 @@ def main(argsl=None,
                 printdeps(workflowobj, document_loader, stdout, args.relative_deps, uri)
                 return 0
 
-            document_loader, avsc_names, processobj, metadata, uri \
-                = validate_document(document_loader, workflowobj, uri,
-                                    enable_dev=args.enable_dev, strict=args.strict,
-                                    preprocess_only=args.print_pre or args.pack)
+            with Perf(metrics, "validate_document %s" % uri):
+                document_loader, avsc_names, processobj, metadata, uri \
+                    = validate_document(document_loader, workflowobj, uri,
+                                        enable_dev=args.enable_dev, strict=args.strict,
+                                        preprocess_only=args.print_pre or args.pack)
 
             if args.pack:
                 stdout.write(print_pack(document_loader, processobj, uri, metadata))
@@ -604,8 +609,9 @@ def main(argsl=None,
                 stdout.write(json.dumps(processobj, indent=4))
                 return 0
 
-            tool = make_tool(document_loader, avsc_names, metadata, uri,
-                    makeTool, vars(args))
+            with Perf(metrics, "make_tool %s" % uri):
+                tool = make_tool(document_loader, avsc_names, metadata, uri,
+                                 makeTool, vars(args))
 
             if args.print_rdf:
                 printrdf(tool, document_loader.ctx, args.rdf_serializer, stdout)
@@ -650,11 +656,12 @@ def main(argsl=None,
                 return 1
 
         if job_order_object is None:
-            job_order_object = load_job_order(args, tool, stdin,
-                                              print_input_deps=args.print_input_deps,
-                                              relative_deps=args.relative_deps,
-                                              stdout=stdout,
-                                              make_fs_access=make_fs_access)
+            with Perf(metrics, "load_job_order"):
+                job_order_object = load_job_order(args, tool, stdin,
+                                                  print_input_deps=args.print_input_deps,
+                                                  relative_deps=args.relative_deps,
+                                                  stdout=stdout,
+                                                  make_fs_access=make_fs_access)
 
         if isinstance(job_order_object, int):
             return job_order_object
