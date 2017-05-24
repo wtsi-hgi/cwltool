@@ -20,15 +20,16 @@ from typing import (Union, Any, AnyStr, cast, Callable, Dict, Sequence, Text,
 
 from . import draft2tool
 from . import workflow
-from .pathmapper import adjustDirObjs, get_listing, adjustFileObjs, trim_listing
+from .pathmapper import adjustDirObjs, get_listing, adjustFileObjs, trim_listing, visit_class
 from .cwlrdf import printrdf, printdot
 from .errors import WorkflowException, UnsupportedRequirement
 from .load_tool import fetch_document, validate_document, make_tool
 from .pack import pack
 from .process import (shortname, Process, relocateOutputs, cleanIntermediate,
                       scandeps, normalizeFilesDirs, use_custom_schema, use_standard_schema)
-from .resolver import tool_resolver
+from .resolver import tool_resolver, ga4gh_tool_registries
 from .stdfsaccess import StdFsAccess
+from .mutation import MutationManager
 
 _logger = logging.getLogger("cwltool")
 
@@ -166,7 +167,16 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
                         help="Will be passed to `docker run` as the '--net' "
                              "parameter. Implies '--enable-net'.")
 
-    parser.add_argument("--on-error", type=str,
+    exgroup = parser.add_mutually_exclusive_group()
+    exgroup.add_argument("--enable-ga4gh-tool-registry", action="store_true", help="Enable resolution using GA4GH tool registry API",
+                        dest="enable_ga4gh_tool_registry", default=True)
+    exgroup.add_argument("--disable-ga4gh-tool-registry", action="store_false", help="Disable resolution using GA4GH tool registry API",
+                        dest="enable_ga4gh_tool_registry", default=True)
+
+    parser.add_argument("--add-ga4gh-tool-registry", action="append", help="Add a GA4GH tool registry endpoint to use for resolution, default %s" % ga4gh_tool_registries,
+                        dest="ga4gh_tool_registries", default=[])
+
+    parser.add_argument("--on-error",
                         help="Desired workflow behavior when a step fails.  One of 'stop' or 'continue'. "
                              "Default is 'stop'.", default="stop", choices=("stop", "continue"))
 
@@ -204,10 +214,11 @@ def single_job_executor(t,  # type: Process
         raise WorkflowException("Must provide 'basedir' in kwargs")
 
     output_dirs = set()
-    finaloutdir = kwargs.get("outdir")
+    finaloutdir = os.path.abspath(kwargs.get("outdir")) if kwargs.get("outdir") else None
     kwargs["outdir"] = tempfile.mkdtemp(prefix=kwargs["tmp_outdir_prefix"]) if kwargs.get(
         "tmp_outdir_prefix") else tempfile.mkdtemp()
     output_dirs.add(kwargs["outdir"])
+    kwargs["mutation_manager"] = MutationManager()
 
     jobReqs = None
     if "cwl:requirements" in job_order_object:
@@ -217,6 +228,12 @@ def single_job_executor(t,  # type: Process
     if jobReqs:
         for req in jobReqs:
             t.requirements.append(req)
+
+    if kwargs.get("default_container"):
+        t.requirements.insert(0, {
+            "class": "DockerRequirement",
+            "dockerPull": kwargs["default_container"]
+        })
 
     jobiter = t.job(job_order_object,
                     output_callback,
@@ -414,8 +431,8 @@ def load_job_order(args, t, stdin, print_input_deps=False, relative_deps=False,
     if len(args.job_order) == 1 and args.job_order[0][0] != "-":
         job_order_file = args.job_order[0]
     elif len(args.job_order) == 1 and args.job_order[0] == "-":
-        job_order_object = yaml.load(stdin)
-        job_order_object, _ = loader.resolve_all(job_order_object, "")
+        job_order_object = yaml.round_trip_load(stdin)  # type: ignore
+        job_order_object, _ = loader.resolve_all(job_order_object, file_uri(os.getcwd()) + "/")
     else:
         job_order_file = None
 
@@ -461,6 +478,8 @@ def load_job_order(args, t, stdin, print_input_deps=False, relative_deps=False,
             else:
                 job_order_object = {"id": args.workflow}
 
+            del cmd_line["job_order"]
+
             job_order_object.update({namemap[k]: v for k, v in cmd_line.items()})
 
             if _logger.isEnabledFor(logging.DEBUG):
@@ -492,8 +511,7 @@ def load_job_order(args, t, stdin, print_input_deps=False, relative_deps=False,
             p["location"] = p["path"]
             del p["path"]
 
-    adjustDirObjs(job_order_object, pathToLoc)
-    adjustFileObjs(job_order_object, pathToLoc)
+    visit_class(job_order_object, ("File", "Directory"), pathToLoc)
     adjustDirObjs(job_order_object, trim_listing)
     normalizeFilesDirs(job_order_object)
 
@@ -537,8 +555,7 @@ def printdeps(obj, document_loader, stdout, relative_deps, uri, basedir=None):
         else:
             raise Exception(u"Unknown relative_deps %s" % relative_deps)
 
-        adjustFileObjs(deps, functools.partial(makeRelative, base))
-        adjustDirObjs(deps, functools.partial(makeRelative, base))
+        visit_class(deps, ("File", "Directory"), functools.partial(makeRelative, base))
 
     stdout.write(json.dumps(deps, indent=4))
 
@@ -574,7 +591,8 @@ def main(argsl=None,  # type: List[str]
          make_fs_access=StdFsAccess,  # type: Callable[[Text], StdFsAccess]
          fetcher_constructor=None,  # type: Callable[[Dict[unicode, unicode], requests.sessions.Session], Fetcher]
          resolver=tool_resolver,
-         logger_handler=None
+         logger_handler=None,
+         custom_schema_callback=None  # type: Callable[[], None]
          ):
     # type: (...) -> int
 
@@ -616,7 +634,10 @@ def main(argsl=None,  # type: List[str]
                      'pack': False,
                      'on_error': 'continue',
                      'relax_path_checks': False,
-                     'validate': False}.iteritems():
+                     'validate': False,
+                     'enable_ga4gh_tool_registry': False,
+                     'ga4gh_tool_registries': []
+        }.iteritems():
             if not hasattr(args, k):
                 setattr(args, k, v)
 
@@ -642,7 +663,14 @@ def main(argsl=None,  # type: List[str]
         if args.relax_path_checks:
             draft2tool.ACCEPTLIST_RE = draft2tool.ACCEPTLIST_EN_RELAXED_RE
 
-        if args.enable_ext:
+        if args.ga4gh_tool_registries:
+            ga4gh_tool_registries[:] = args.ga4gh_tool_registries
+        if not args.enable_ga4gh_tool_registry:
+            del ga4gh_tool_registries[:]
+
+        if custom_schema_callback:
+            custom_schema_callback()
+        elif args.enable_ext:
             res = pkg_resources.resource_stream(__name__, 'extensions.yml')
             use_custom_schema("v1.0", "http://commonwl.org/cwltool", res.read())
             res.close()
@@ -663,9 +691,6 @@ def main(argsl=None,  # type: List[str]
                                     preprocess_only=args.print_pre or args.pack,
                                     fetcher_constructor=fetcher_constructor)
 
-            if args.validate:
-                return 0
-
             if args.pack:
                 stdout.write(print_pack(document_loader, processobj, uri, metadata))
                 return 0
@@ -676,6 +701,9 @@ def main(argsl=None,  # type: List[str]
 
             tool = make_tool(document_loader, avsc_names, metadata, uri,
                              makeTool, vars(args))
+
+            if args.validate:
+                return 0
 
             if args.print_rdf:
                 printrdf(tool, document_loader.ctx, args.rdf_serializer, stdout)
@@ -752,8 +780,7 @@ def main(argsl=None,  # type: List[str]
                     if p["location"].startswith("file://"):
                         p["path"] = uri_file_path(p["location"])
 
-                adjustDirObjs(out, locToPath)
-                adjustFileObjs(out, locToPath)
+                visit_class(out, ("File", "Directory"), locToPath)
 
                 if isinstance(out, basestring):
                     stdout.write(out)

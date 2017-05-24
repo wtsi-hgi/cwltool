@@ -38,7 +38,24 @@ To install from source::
 
 Remember, if co-installing multiple CWL implementations then you need to
 maintain which implementation ``cwl-runner`` points to via a symbolic file
-system link or [another facility](https://wiki.debian.org/DebianAlternatives).
+system link or `another facility <https://wiki.debian.org/DebianAlternatives>`_.
+
+Running tests locally
+---------------------
+
+-  Running basic tests ``(/tests)``:
+
+.. code:: bash
+
+    python setup.py test
+
+-  Running the entire suite of CWL conformance tests:
+
+The GitHub repository for the CWL specifications contains a script that tests a CWL
+implementation against a wide array of valid CWL files using the `cwltest <https://github.com/common-workflow-language/cwltest>`_
+program
+
+Instructions for running these tests can be found in the Common Workflow Language Specification repository at https://github.com/common-workflow-language/common-workflow-language/blob/master/CONFORMANCE_TESTS.md
 
 Run on the command line
 -----------------------
@@ -78,6 +95,26 @@ is referenced and that document isn't found in the current directory then the
 following locations will be searched:
 http://www.commonwl.org/v1.0/CommandLineTool.html#Discovering_CWL_documents_on_a_local_filesystem
 
+
+Use with GA4GH Tool Registry API
+--------------------------------
+
+Cwltool can launch tools directly from `GA4GH Tool Registry API`_ endpoints.
+
+By default, cwltool searches https://dockstore.org/ .  Use --add-tool-registry to add other registries to the search path.
+
+For example ::
+
+  cwltool --non-strict quay.io/collaboratory/dockstore-tool-bamstats:master test.json
+
+and (defaults to latest when a version is not specified) ::
+
+  cwltool --non-strict quay.io/collaboratory/dockstore-tool-bamstats test.json
+
+For this example, grab the test.json (and input file) from https://github.com/CancerCollaboratory/dockstore-tool-bamstats
+
+.. _`GA4GH Tool Registry API`: https://github.com/ga4gh/tool-registry-schemas
+
 Import as a module
 ------------------
 
@@ -100,6 +137,8 @@ The easiest way to use cwltool to run a tool or workflow from Python is to use a
 
 Cwltool control flow
 --------------------
+
+Technical outline of how cwltool works internally, for maintainers.
 
 #. Use CWL `load_tool()` to load document.
 
