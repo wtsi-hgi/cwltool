@@ -717,6 +717,7 @@ class WorkflowStep(Process):
                         if "default" in param and "default" in tool_entry:
                             step_default = param["default"]
                         param.update(tool_entry)
+                        param["endId"] = tool_entry["id"]
                         if step_default is not None:
                             param["default"] = step_default
                         found = True
