@@ -15,7 +15,7 @@
 #
 # Contact: common-workflow-language@googlegroups.com
 
-# make pep8 to check for basic Python code compliance
+# make pycodestyle to check for basic Python code compliance
 # make autopep8 to fix most pep8 errors
 # make pylint to check Python code for enhanced compliance including naming
 #  and documentation
@@ -26,9 +26,10 @@ MODULE=cwltool
 # `SHELL=bash` doesn't work for some, so don't use BASH-isms like
 # `[[` conditional expressions.
 PYSOURCES=$(wildcard ${MODULE}/**.py tests/*.py) setup.py
-DEVPKGS=pep8 diff_cover autopep8 pylint coverage pep257 flake8 pytest isort mock
-DEBDEVPKGS=pep8 python-autopep8 pylint python-coverage pep257 sloccount python-flake8 python-mock
-VERSION=1.0.$(shell date +%Y%m%d%H%M%S --date=`git log --first-parent \
+DEVPKGS=pycodestyle diff_cover autopep8 pylint coverage pydocstyle flake8 pytest isort mock
+DEBDEVPKGS=pep8 python-autopep8 pylint python-coverage pydocstyle sloccount \
+	   python-flake8 python-mock shellcheck
+VERSION=1.0.$(shell date +%Y%m%d%H%M%S --utc --date=`git log --first-parent \
 	--max-count=1 --format=format:%cI`)
 mkfile_dir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
@@ -56,7 +57,7 @@ install: FORCE
 dist: dist/${MODULE}-$(VERSION).tar.gz
 
 dist/${MODULE}-$(VERSION).tar.gz: $(SOURCES)
-	./setup.py sdist
+	./setup.py sdist bdist_wheel
 
 ## clean       : clean up all temporary / machine-generated files
 clean: FORCE
@@ -70,25 +71,27 @@ clean: FORCE
 sort_imports:
 	isort ${MODULE}/*.py tests/*.py setup.py
 
-## pep8        : check Python code style
-pep8: $(PYSOURCES)
-	pep8 --exclude=_version.py  --show-source --show-pep8 $^ || true
+pep8: pycodestyle
+## pycodestyle        : check Python code style
+pycodestyle: $(PYSOURCES)
+	pycodestyle --exclude=_version.py  --show-source --show-pep8 $^ || true
 
-pep8_report.txt: $(PYSOURCES)
-	pep8 --exclude=_version.py $^ > pep8_report.txt || true
+pycodestyle_report.txt: $(PYSOURCES)
+	pycodestyle --exclude=_version.py $^ > $@ || true
 
-diff_pep8_report: pep8_report.txt
-	diff-quality --violations=pep8 pep8_report.txt
+diff_pycodestyle_report: pycodestyle_report.txt
+	diff-quality --violations=pycodestyle $^
 
-## pep257      : check Python code style
-pep257: $(PYSOURCES)
-	pep257 --ignore=D100,D101,D102,D103 $^ || true
+pep257: pydocstyle
+## pydocstyle      : check Python code style
+pydocstyle: $(PYSOURCES)
+	pydocstyle --ignore=D100,D101,D102,D103 $^ || true
 
-pep257_report.txt: $(PYSOURCES)
-	pep257 setup.py $^ > pep257_report.txt 2>&1 || true
+pydocstyle_report.txt: $(PYSOURCES)
+	pydocstyle setup.py $^ > pydocstyle_report.txt 2>&1 || true
 
-diff_pep257_report: pep257_report.txt
-	diff-quality --violations=pep8 pep257_report.txt
+diff_pydocstyle_report: pydocstyle_report.txt
+	diff-quality --violations=pycodestyle $^
 
 ## autopep8    : fix most Python code indentation and formatting
 autopep8: $(PYSOURCES)
@@ -111,23 +114,18 @@ pylint_report.txt: ${PYSOURCES}
 diff_pylint_report: pylint_report.txt
 	diff-quality --violations=pylint pylint_report.txt
 
-.coverage: $(PYSOURCES) all
-	export COVERAGE_PROCESS_START=${mkfile_dir}.coveragerc; \
-	       cd ${CWL}; ./run_test.sh RUNNER=cwltool
-	coverage run setup.py test
-	coverage combine ${CWL} ${CWL}/draft-3/ ./
+.coverage: tests
+
+coverage: .coverage
+	coverage report
 
 coverage.xml: .coverage
-	python-coverage xml
+	coverage xml
 
 coverage.html: htmlcov/index.html
 
 htmlcov/index.html: .coverage
-	python-coverage html
-	@echo Test coverage of the Python code is now in htmlcov/index.html
-
-coverage-report: .coverage
-	python-coverage report
+	coverage html
 
 diff-cover: coverage-gcovr.xml coverage.xml
 	diff-cover coverage-gcovr.xml coverage.xml
@@ -137,8 +135,8 @@ diff-cover.html: coverage-gcovr.xml coverage.xml
 		--html-report diff-cover.html
 
 ## test        : run the ${MODULE} test suite
-test: FORCE
-	./setup.py test
+test: $(PYSOURCES)
+	python setup.py test --addopts "--cov cwltool"
 
 sloccount.sc: ${PYSOURCES} Makefile
 	sloccount --duplicates --wide --details $^ > sloccount.sc
@@ -152,26 +150,39 @@ list-author-emails:
 	@git log --format='%aN,%aE' | sort -u | grep -v 'root'
 
 
-mypy: ${PYSOURCES}
-	rm -Rf typeshed/2.7/ruamel/yaml
+mypy2: ${PYSOURCES}
+	rm -Rf typeshed/2and3/ruamel/yaml
 	ln -s $(shell python -c 'from __future__ import print_function; import ruamel.yaml; import os.path; print(os.path.dirname(ruamel.yaml.__file__))') \
-		typeshed/2.7/ruamel/yaml
-	rm -Rf typeshed/2.7/schema_salad
+		typeshed/2and3/ruamel/yaml
+	rm -Rf typeshed/2and3/schema_salad
 	ln -s $(shell python -c 'from __future__ import print_function; import schema_salad; import os.path; print(os.path.dirname(schema_salad.__file__))') \
-		typeshed/2.7/schema_salad
-	MYPYPATH=typeshed/2.7 mypy --py2 --disallow-untyped-calls \
-		 --warn-redundant-casts --warn-unused-ignores --fast-parser \
+		typeshed/2and3/schema_salad
+	MYPYPATH=$$MYPYPATH:typeshed/2.7:typeshed/2and3 mypy --py2 --disallow-untyped-calls \
+		 --warn-redundant-casts \
 		 cwltool
 
 mypy3: ${PYSOURCES}
-	rm -Rf typeshed/3/ruamel/yaml
+	rm -Rf typeshed/2and3/ruamel/yaml
 	ln -s $(shell python3 -c 'from __future__ import print_function; import ruamel.yaml; import os.path; print(os.path.dirname(ruamel.yaml.__file__))') \
-		typeshed/3/ruamel/yaml
-	rm -Rf typeshed/3/schema_salad
+		typeshed/2and3/ruamel/yaml
+	rm -Rf typeshed/2and3/schema_salad
 	ln -s $(shell python3 -c 'from __future__ import print_function; import schema_salad; import os.path; print(os.path.dirname(schema_salad.__file__))') \
-		typeshed/3/schema_salad
-	MYPYPATH=typeshed/3 mypy --disallow-untyped-calls \
-		 --warn-redundant-casts --warn-unused-ignores --fast-parser \
+		typeshed/2and3/schema_salad
+	MYPYPATH=$$MYPYPATH:typeshed/3:typeshed/2and3 mypy --disallow-untyped-calls \
+		 --warn-redundant-casts \
 		 cwltool
 
+release: FORCE
+	./release-test.sh
+	. testenv2/bin/activate && \
+		testenv2/src/${MODULE}/setup.py sdist bdist_wheel && \
+		pip install twine && \
+		twine upload testenv2/src/${MODULE}/dist/* && \
+		git tag ${VERSION} && git push --tags
+
 FORCE:
+
+# Use this to print the value of a Makefile variable
+# Example `make print-VERSION`
+# From https://www.cmcrossroads.com/article/printing-value-makefile-variable
+print-%  : ; @echo $* = $($*)

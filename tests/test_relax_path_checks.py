@@ -1,6 +1,9 @@
+from __future__ import absolute_import
 import unittest
+import pytest
 from tempfile import NamedTemporaryFile
 
+from .util import needs_docker
 from cwltool.main import main
 
 
@@ -23,11 +26,14 @@ stdout: test.txt
 baseCommand: [cat]
 '''
 
+    @needs_docker
     def test_spaces_in_input_files(self):
-        with NamedTemporaryFile() as f:
+        with NamedTemporaryFile(mode='w', delete=False) as f:
             f.write(self.script)
             f.flush()
-            with NamedTemporaryFile(prefix="test with spaces") as spaces:
+            f.close()
+            with NamedTemporaryFile(prefix="test with spaces", delete=False) as spaces:
+                spaces.close()
                 self.assertEquals(
                     main(["--debug", f.name, '--input', spaces.name]), 1)
                 self.assertEquals(

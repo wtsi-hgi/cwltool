@@ -1,3 +1,4 @@
+#!/usr/bin/env cwl-runner
 class: CommandLineTool
 cwlVersion: v1.0
 inputs:
@@ -11,8 +12,9 @@ inputs:
       if sys.argv[1] == "2":
         exit(1)
       else:
-        f = open("foo"+sys.argv[1]+".txt", "w")
-        f.write(sys.argv[1]+"\n")
+        f = open("foo"+sys.argv[1]+".txt", "wb")
+        content = sys.argv[1]+"\n"
+        f.write(content.encode('utf-8'))
       if sys.argv[1] == "5":
         exit(1)
 outputs:

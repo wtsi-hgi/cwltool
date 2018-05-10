@@ -1,27 +1,41 @@
+from __future__ import absolute_import
 import logging
 import os
-import urllib
+import sys
 
-from schema_salad.ref_resolver import file_uri
+if sys.version_info < (3, 4):
+    from pathlib2 import Path
+else:
+    from pathlib import Path
+from six.moves import urllib
+
 
 _logger = logging.getLogger("cwltool")
 
 
 def resolve_local(document_loader, uri):
-    if uri.startswith("/"):
-        return None
-    shares = [os.environ.get("XDG_DATA_HOME", os.path.join(os.environ["HOME"], ".local", "share"))]
-    shares.extend(os.environ.get("XDG_DATA_DIRS", "/usr/local/share/:/usr/share/").split(":"))
-    shares = [os.path.join(s, "commonwl", uri) for s in shares]
-    shares.insert(0, os.path.join(os.getcwd(), uri))
+    pathpart, frag = urllib.parse.urldefrag(uri)
+    pathobj = Path(pathpart).resolve()
+
+    if pathobj.is_file():
+        if frag:
+            return "{}#{}".format(pathobj.as_uri(), frag)
+        else:
+            return pathobj.as_uri()
+
+    sharepaths = [os.environ.get("XDG_DATA_HOME", os.path.join(
+        os.path.expanduser('~'), ".local", "share"))]
+    sharepaths.extend(os.environ.get(
+        "XDG_DATA_DIRS", "/usr/local/share/:/usr/share/").split(":"))
+    shares = [os.path.join(s, "commonwl", uri) for s in sharepaths]
 
     _logger.debug("Search path is %s", shares)
 
-    for s in shares:
-        if os.path.exists(s):
-            return file_uri(s)
-        if os.path.exists("%s.cwl" % s):
-            return file_uri(s)
+    for path in shares:
+        if os.path.exists(path):
+            return Path(uri).as_uri()
+        if os.path.exists("{}.cwl".format(path)):
+            return Path("{}.cwl".format(path)).as_uri()
     return None
 
 
@@ -30,7 +44,6 @@ def tool_resolver(document_loader, uri):
         ret = r(document_loader, uri)
         if ret is not None:
             return ret
-    return file_uri(os.path.abspath(uri), split_frag=True)
 
 
 ga4gh_tool_registries = ["https://dockstore.org:8443"]
@@ -40,7 +53,7 @@ def resolve_ga4gh_tool(document_loader, uri):
     if not version:
         version = "latest"
     for reg in ga4gh_tool_registries:
-        ds = "{0}/api/ga4gh/v1/tools/{1}/versions/{2}/plain-CWL/descriptor".format(reg, urllib.quote(path, ""), urllib.quote(version, ""))
+        ds = "{0}/api/ga4gh/v1/tools/{1}/versions/{2}/plain-CWL/descriptor".format(reg, urllib.parse.quote(path, ""), urllib.parse.quote(version, ""))
         try:
             resp = document_loader.session.head(ds)
             resp.raise_for_status()
