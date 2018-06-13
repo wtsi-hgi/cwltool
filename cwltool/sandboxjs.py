@@ -5,10 +5,15 @@ import logging
 import os
 import re
 import select
-import threading
 import sys
+import threading
 from io import BytesIO
 from typing import Any, Dict, List, Mapping, Text, Tuple, Union
+
+from py_mini_racer import py_mini_racer
+from multiprocessing import Pool
+from multiprocessing import TimeoutError
+
 import six
 from pkg_resources import resource_stream
 from .utils import onWindows, subprocess
@@ -116,9 +121,82 @@ def new_js_proc(js_text, force_docker_pull=False):
 
     return nodejs
 
+# NOTE: JSON.stringify has to be used as js returns py_mini_racer returns a float for numbers
+# greater than INT_MAX. JSON.stringify avoids having to parse v8's js internals
 
-def exec_js_process(js_text, timeout=None, js_console=False, context=None, force_docker_pull=False, debug=False):
-    # type: (Text, int, bool, Text, bool, bool) -> Tuple[int, Text, Text]
+RACER_JS_CONTAINER_JS_CONSOLE = u""""use strict";
+var console = {};
+%s
+(function (fn) {
+    var stdio = "";
+    console.log = function (msg) {
+        stdio += "[log] " + msg + "\\n"
+    }
+    console.error = function (msg) {
+        stdio += "[err] " + msg + "\\n"
+    }
+    var result = fn();
+    return {
+        stdio: stdio,
+        result: JSON.stringify(result)
+    }
+})(function ()%s)"""
+
+RACER_JS_CONTAINER = u""""use strict";
+%s
+(function (fn) {
+    var result = fn();
+    return {
+        result: JSON.stringify(result)
+    }
+})(function ()%s)"""
+
+def x(fndebug):
+    ctx = py_mini_racer.MiniRacer()
+    try:
+        result = ctx.eval(fndebug)
+    finally:
+        del ctx
+    return result
+
+
+def racer_execjs(js, jslib, timeout=None, js_console=False):
+    if timeout is None:
+        timeout = 20
+
+    fndebug = (RACER_JS_CONTAINER_JS_CONSOLE if js_console else RACER_JS_CONTAINER) %\
+            (jslib, js if isinstance(js, six.string_types) and len(js) > 1 and js[0] == '{' else ("{return (%s);}" % js))
+
+    p = Pool(1)
+    try:
+        js_result = p.apply_async(x, [fndebug]).get(timeout)
+    except TimeoutError:
+        raise JavascriptException(u"Long-running script killed after %s seconds:\nJS expression was: %s\nfndebug: %s\n" % (timeout, js, fndebug))
+    except py_mini_racer.MiniRacerBaseException as e:
+        raise JavascriptException(u"Exception in script:\nJS expression was: %s\nException was: %s" % (js, str(e)))
+    finally:
+        p.close()
+
+    if js_console:
+        if len(js_result["stdio"]) > 0:
+            _logger.info("Javascript console output:")
+            _logger.info("----------------------------------------")
+            _logger.info(js_result["stdio"])
+            _logger.info("----------------------------------------")
+
+    return json.loads(js_result["result"])
+
+def execjs(js, jslib, timeout=None, force_docker_pull=False, debug=False, js_console=False):  # type: (Union[Mapping, Text], Any, int, bool, bool, bool) -> JSON
+    return racer_execjs(js, jslib, timeout, js_console)
+
+def exec_js_process(js_text,                  # type: Text
+                    timeout=None,             # type: float
+                    js_console=False,         # type: bool
+                    context=None,             # type: Text
+                    force_docker_pull=False,  # type: bool
+                    debug=False               # type: bool
+                   ):
+    # type: (...) -> Tuple[int, Text, Text]
 
     if not hasattr(localdata, "procs"):
         localdata.procs = {}
