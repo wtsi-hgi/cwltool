@@ -7,3 +7,4 @@ typing>=3.5.3
 pathlib2==2.3.2; python_version<"3"
 mypy-extensions
 subprocess32 >= 3.5.0; os.name=="posix"
+py_mini_racer; os.name=="posix"
