@@ -389,8 +389,14 @@ def code_fragment_to_js(js, jslib=""):
 
     return u"\"use strict\";\n%s\n(function()%s)()" % (jslib, inner_js)
 
-def execjs(js, jslib, timeout=None, force_docker_pull=False, debug=False, js_console=False):
-    # type: (Text, Text, int, bool, bool, bool) -> JSON
+def execjs(js,                       # type: Text
+           jslib,                    # type: Text
+           timeout=None,             # type: float
+           force_docker_pull=False,  # type: bool
+           debug=False,              # type: bool
+           js_console=False          # type: bool
+          ):  # type: (...) -> JSON
+    return racer_execjs(js_text, timeout, js_console)
 
     fn = code_fragment_to_js(js, jslib)
 
