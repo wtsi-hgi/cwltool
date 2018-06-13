@@ -200,7 +200,6 @@ def exec_js_process(js_text,                  # type: Text
                     debug=False               # type: bool
                    ):
     # type: (...) -> Tuple[int, Text, Text]
-    return racer_execjs(js_text, timeout, js_console)
 
     if not hasattr(localdata, "procs"):
         localdata.procs = {}
@@ -400,6 +399,7 @@ def execjs(js,                       # type: Text
            debug=False,              # type: bool
            js_console=False          # type: bool
           ):  # type: (...) -> JSON
+    return racer_execjs(js_text, timeout, js_console)
 
     fn = code_fragment_to_js(js, jslib)
 
