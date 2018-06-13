@@ -47,9 +47,11 @@ def get_expressions(tool, schema, source_line=None):
         for possible_schema in schema.schemas:
             if is_expression(tool, possible_schema):
                 return [(tool, source_line)]
-            elif validate_ex(possible_schema, tool, raise_ex=False, logger=_logger_validation_warnings):
+            elif validate_ex(possible_schema, tool, raise_ex=False,
+                             logger=_logger_validation_warnings):
                 valid_schema = possible_schema
 
+        assert valid_schema is not None
         return get_expressions(tool, valid_schema, source_line)
     elif isinstance(schema, avro.schema.ArraySchema):
         if not isinstance(tool, list):
