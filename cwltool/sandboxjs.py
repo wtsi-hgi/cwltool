@@ -12,7 +12,7 @@ from io import BytesIO
 from typing import Any, Dict, List, Mapping, Text, Tuple, Union
 
 from py_mini_racer import py_mini_racer
-from multiprocessing import Pool
+from multiprocessing.pool import ThreadPool as Pool
 from multiprocessing import TimeoutError
 
 import six
