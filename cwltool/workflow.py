@@ -2,6 +2,7 @@ from __future__ import absolute_import
 import copy
 import functools
 import json
+import ujson
 import logging
 import random
 import tempfile
@@ -99,7 +100,8 @@ def match_types(sinktype, src, iid, inputobj, linkMerge, valueFrom):
         return True
     elif valueFrom is not None or can_assign_src_to_sink(src.parameter["type"], sinktype) or sinktype == "Any":
         # simply assign the value from state to input
-        inputobj[iid] = copy.deepcopy(src.value)
+        #inputobj[iid] = copy.deepcopy(src.value)
+        inputobj[iid] = ujson.loads(ujson.dumps(src.value))
         return True
     return False
 

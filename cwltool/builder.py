@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 import copy
+import ujson
 import os
 import logging
 import json
@@ -152,7 +153,8 @@ class Builder(object):
                 else:
                     avsc = AvroSchemaFromJSONData(t, self.names)
                 if validate.validate(avsc, datum):
-                    schema = copy.deepcopy(schema)
+                    #schema = copy.deepcopy(schema)
+                    schema = ujson.loads(ujson.dumps(schema))
                     schema["type"] = t
                     if not value_from_expression:
                         return self.bind_input(schema, datum, lead_pos=lead_pos, tail_pos=tail_pos, discover_secondaryFiles=discover_secondaryFiles)
@@ -162,7 +164,8 @@ class Builder(object):
             if not bound_input:
                 raise validate.ValidationException(u"'%s' is not a valid union %s" % (datum, schema["type"]))
         elif isinstance(schema["type"], dict):
-            st = copy.deepcopy(schema["type"])
+            #st = copy.deepcopy(schema["type"])
+            st = ujson.loads(ujson.dumps(schema["type"]))
             if binding and "inputBinding" not in st and st["type"] == "array" and "itemSeparator" not in binding:
                 st["inputBinding"] = {}
             for k in ("secondaryFiles", "format", "streamable"):
@@ -187,7 +190,8 @@ class Builder(object):
                 for n, item in enumerate(datum):
                     b2 = None
                     if binding:
-                        b2 = copy.deepcopy(binding)
+                        #b2 = copy.deepcopy(binding)
+                        b2 = ujson.loads(ujson.dumps(binding))
                         b2["datum"] = item
                     itemschema = {
                         u"type": schema["items"],
